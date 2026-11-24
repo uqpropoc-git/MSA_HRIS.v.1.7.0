@@ -1,1 +1,314 @@
-const app=document.getElementById('app');const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const usr=()=>JSON.parse(localStorage.getItem('msa_user')||'null');function login(){app.innerHTML=`<main class="login"><section class="card"><h1>MSA HRIS</h1><p>PT. Multi Sarana Avindo</p><form id="f"><label>Username<input id="u" required></label><label>Password<input id="p" type="password" required></label><button>Masuk</button><div id="e"></div></form></section></main>`;f.onsubmit=async x=>{x.preventDefault();try{const d=await API.call('login',{username:u.value,password:p.value});localStorage.setItem('msa_token',d.token);localStorage.setItem('msa_user',JSON.stringify(d.user));boot()}catch(z){e.textContent=z.message}}}function boot(){if(!usr())return login();app.innerHTML=`<div class="shell"><aside><b>MSA HRIS</b><small>${esc(usr().full_name)}<br>${usr().role}</small><nav id="n"></nav><footer>Created by UQ</footer></aside><main><header><h2 id="t">Dashboard</h2><div><span id="net"></span><button id="out">Keluar</button></div></header><section id="c"></section></main></div>`;const items=[['Dashboard','dash'],['Pengajuan Cuti','leave'],['Kalender Cuti','cal'],...(['ADMIN','HRD','KABAG'].includes(usr().role)?[['Approval','app']]:[]),...(['ADMIN','HRD'].includes(usr().role)?[['Karyawan','emp'],['Hari Libur','hol'],['Audit Log','audit'],['Laporan','rep']]:[]),...(usr().role==='ADMIN'?[['Backup','bak']]:[])];n.innerHTML=items.map(x=>`<button data-p="${x[1]}">${x[0]}</button>`).join('');n.querySelectorAll('button').forEach(b=>b.onclick=()=>route(b.dataset.p));out.onclick=async()=>{try{await API.call('logout')}catch{}localStorage.clear();login()};status();route('dash')}function status(){net.textContent=navigator.onLine?'● Online':'● Offline'}window.addEventListener('online',status);window.addEventListener('offline',status);async function route(p){const titles={dash:'Dashboard',leave:'Pengajuan Cuti',cal:'Kalender Cuti',app:'Approval',emp:'Karyawan',hol:'Hari Libur',audit:'Audit Log',rep:'Laporan',bak:'Backup'};t.textContent=titles[p]||'MSA HRIS';if(p==='dash')dash();if(p==='leave')leave();if(p==='app')approval();if(p==='emp')employees();if(p==='hol')holidays();if(p==='cal')calendar();if(p==='audit')audit();if(p==='rep')reports();if(p==='bak')backup()}async function dash(){c.innerHTML='<div class="card">Memuat...</div>';try{const d=await API.call('dashboard');c.innerHTML=`<div class="stats"><div class="card"><small>Menunggu Kabag</small><b>${d.pendingKabag}</b></div><div class="card"><small>Menunggu HRD</small><b>${d.pendingHrd}</b></div><div class="card"><small>Disetujui</small><b>${d.approved}</b></div><div class="card"><small>Total Hari</small><b>${d.totalDays}</b></div></div><div class="card"><h3>Penggunaan Cuti ${d.year}</h3>${d.monthly.map(m=>`<div>${m.month}: ${m.days} hari</div>`).join('')}</div>`}catch(e){c.innerHTML=`<div class="card err">${esc(e.message)}</div>`}}async function leave(){c.innerHTML=`<div class="card"><h3>Ajukan Cuti</h3><form id="lf"><label>Mulai<input id="s" type="date" required></label><label>Selesai<input id="z" type="date" required></label><label>Alasan<textarea id="r" required></textarea></label><button>Ajukan</button><p id="m"></p></form></div>`;lf.onsubmit=async e=>{e.preventDefault();try{const d=await API.call('createLeave',{start_date:s.value,end_date:z.value,reason:r.value,leave_type:'Cuti Tahunan'});m.textContent='Berhasil: '+d.total_days+' hari'}catch(x){m.textContent=x.message}}}async function approval(){try{const rows=await API.call('listLeaves',{status:usr().role==='HRD'?'WAITING_HRD':'WAITING_KABAG'});c.innerHTML=`<div class="card"><h3>Approval</h3>${rows.map(r=>`<article class="row"><div>${esc(r.employee_id)}<small>${r.start_date} - ${r.end_date} • ${r.total_days} hari</small></div><div><button onclick="ok('${r.leave_id}')">Setujui</button><button class="danger" onclick="no('${r.leave_id}')">Tolak</button></div></article>`).join('')||'<p>Tidak ada.</p>'}</div>`}catch(e){c.innerHTML=`<div class="card err">${esc(e.message)}</div>`}}window.ok=async id=>{try{const d=await API.call('approveLeave',{leave_id:id});alert('Berhasil '+(d.document?.document_number||''));approval()}catch(e){alert(e.message)}};window.no=async id=>{const reason=prompt('Alasan penolakan');if(!reason)return;try{await API.call('rejectLeave',{leave_id:id,reason});approval()}catch(e){alert(e.message)}};async function employees(){const rows=await API.call('listEmployees');c.innerHTML=`<div class="card"><h3>Karyawan</h3><table><tr><th>NIK</th><th>Nama</th><th>Jabatan</th><th>Departemen</th></tr>${rows.map(r=>`<tr><td>${esc(r.nik)}</td><td>${esc(r.name)}</td><td>${esc(r.position_id)}</td><td>${esc(r.department_id)}</td></tr>`).join('')}</table></div>`}async function holidays(){const rows=await API.call('listHolidays',{year:new Date().getFullYear()});c.innerHTML=`<div class="card"><h3>Hari Libur</h3><table><tr><th>Tanggal</th><th>Nama</th><th>Jenis</th></tr>${rows.map(r=>`<tr><td>${r.holiday_date}</td><td>${esc(r.holiday_name)}</td><td>${esc(r.holiday_type)}</td></tr>`).join('')}</table></div>`}async function calendar(){const rows=await API.call('listLeaves',{status:'LETTER_ISSUED'});c.innerHTML=`<div class="card"><h3>Kalender Cuti</h3>${rows.map(r=>`<div class="row"><div>${esc(r.employee_id)}<small>${r.start_date} → ${r.end_date}</small></div><span>${r.total_days} hari</span></div>`).join('')||'Belum ada data.'}</div>`}async function audit(){const rows=await API.call('getAudit',{});c.innerHTML=`<div class="card"><h3>Audit Log</h3><table><tr><th>Waktu</th><th>User</th><th>Action</th><th>Deskripsi</th></tr>${rows.map(r=>`<tr><td>${r.timestamp}</td><td>${esc(r.user_name)}</td><td>${esc(r.action)}</td><td>${esc(r.description)}</td></tr>`).join('')}</table></div>`}function reports(){c.innerHTML='<div class="card"><h3>Laporan</h3><p>Endpoint laporan sudah tersedia. UI filter dapat diperluas tanpa mengubah API inti.</p></div>'}function backup(){c.innerHTML='<div class="card"><h3>Backup Database</h3><button onclick="doBackup()">Backup Sekarang</button></div>'}window.doBackup=async()=>{try{const d=await API.call('backupDatabase');alert('Backup selesai: '+d.name)}catch(e){alert(e.message)}}boot();
+const app = document.getElementById('app');
+
+const esc = (s) =>
+  String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[c]));
+
+const usr = () => JSON.parse(localStorage.getItem('msa_user') || 'null');
+
+function login() {
+  app.innerHTML = `
+    <main class="login">
+      <section class="card">
+        <h1>MSA HRIS</h1>
+        <p>PT. Multi Sarana Avindo</p>
+        <form id="f">
+          <label>Username<input id="u" required></label>
+          <label>Password<input id="p" type="password" required></label>
+          <button>Masuk</button>
+          <div id="e"></div>
+        </form>
+      </section>
+    </main>
+  `;
+
+  f.onsubmit = async (x) => {
+    x.preventDefault();
+    try {
+      const d = await API.call('login', { username: u.value, password: p.value });
+      localStorage.setItem('msa_token', d.token);
+      localStorage.setItem('msa_user', JSON.stringify(d.user));
+      boot();
+    } catch (z) {
+      e.textContent = z.message;
+    }
+  };
+}
+
+function boot() {
+  if (!usr()) return login();
+
+  app.innerHTML = `
+    <div class="shell">
+      <aside>
+        <b>MSA HRIS</b>
+        <small>${esc(usr().full_name)}<br>${usr().role}</small>
+        <nav id="n"></nav>
+        <footer>Created by UQ</footer>
+      </aside>
+      <main>
+        <header>
+          <h2 id="t">Dashboard</h2>
+          <div><span id="net"></span><button id="out">Keluar</button></div>
+        </header>
+        <section id="c"></section>
+      </main>
+    </div>
+  `;
+
+  const items = [
+    ['Dashboard', 'dash'],
+    ['Pengajuan Cuti', 'leave'],
+    ['Kalender Cuti', 'cal'],
+    ...(['ADMIN', 'HRD', 'KABAG'].includes(usr().role) ? [['Approval', 'app']] : []),
+    ...(['ADMIN', 'HRD'].includes(usr().role)
+      ? [['Karyawan', 'emp'], ['Hari Libur', 'hol'], ['Audit Log', 'audit'], ['Laporan', 'rep']]
+      : []),
+    ...(usr().role === 'ADMIN' ? [['Backup', 'bak']] : []),
+  ];
+
+  n.innerHTML = items.map((x) => `<button data-p="${x[1]}">${x[0]}</button>`).join('');
+  n.querySelectorAll('button').forEach((b) => (b.onclick = () => route(b.dataset.p)));
+
+  out.onclick = async () => {
+    try {
+      await API.call('logout');
+    } catch {}
+    localStorage.clear();
+    login();
+  };
+
+  status();
+  route('dash');
+}
+
+function status() {
+  net.textContent = navigator.onLine ? '● Online' : '● Offline';
+}
+
+window.addEventListener('online', status);
+window.addEventListener('offline', status);
+
+async function route(p) {
+  const titles = {
+    dash: 'Dashboard',
+    leave: 'Pengajuan Cuti',
+    cal: 'Kalender Cuti',
+    app: 'Approval',
+    emp: 'Karyawan',
+    hol: 'Hari Libur',
+    audit: 'Audit Log',
+    rep: 'Laporan',
+    bak: 'Backup',
+  };
+
+  t.textContent = titles[p] || 'MSA HRIS';
+  if (p === 'dash') dash();
+  if (p === 'leave') leave();
+  if (p === 'app') approval();
+  if (p === 'emp') employees();
+  if (p === 'hol') holidays();
+  if (p === 'cal') calendar();
+  if (p === 'audit') audit();
+  if (p === 'rep') reports();
+  if (p === 'bak') backup();
+}
+
+async function dash() {
+  c.innerHTML = '<div class="card">Memuat...</div>';
+  try {
+    const d = await API.call('dashboard');
+    c.innerHTML = `
+      <div class="stats">
+        <div class="card"><small>Menunggu Kabag</small><b>${d.pendingKabag}</b></div>
+        <div class="card"><small>Menunggu HRD</small><b>${d.pendingHrd}</b></div>
+        <div class="card"><small>Disetujui</small><b>${d.approved}</b></div>
+        <div class="card"><small>Total Hari</small><b>${d.totalDays}</b></div>
+      </div>
+      <div class="card">
+        <h3>Penggunaan Cuti ${d.year}</h3>
+        ${d.monthly.map((m) => `<div>${m.month}: ${m.days} hari</div>`).join('')}
+      </div>
+    `;
+  } catch (e) {
+    c.innerHTML = `<div class="card err">${esc(e.message)}</div>`;
+  }
+}
+
+async function leave() {
+  c.innerHTML = `
+    <div class="card">
+      <h3>Ajukan Cuti</h3>
+      <form id="lf">
+        <label>Mulai<input id="s" type="date" required></label>
+        <label>Selesai<input id="z" type="date" required></label>
+        <label>Alasan<textarea id="r" required></textarea></label>
+        <button>Ajukan</button>
+        <p id="m"></p>
+      </form>
+    </div>
+  `;
+
+  lf.onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const d = await API.call('createLeave', {
+        start_date: s.value,
+        end_date: z.value,
+        reason: r.value,
+        leave_type: 'Cuti Tahunan',
+      });
+      m.textContent = 'Berhasil: ' + d.total_days + ' hari';
+    } catch (x) {
+      m.textContent = x.message;
+    }
+  };
+}
+
+async function approval() {
+  try {
+    const rows = await API.call('listLeaves', {
+      status: usr().role === 'HRD' ? 'WAITING_HRD' : 'WAITING_KABAG',
+    });
+    c.innerHTML = `
+      <div class="card">
+        <h3>Approval</h3>
+        ${
+          rows
+            .map(
+              (r) => `
+              <article class="row">
+                <div>${esc(r.employee_id)}<small>${r.start_date} - ${r.end_date} • ${r.total_days} hari</small></div>
+                <div>
+                  <button onclick="ok('${r.leave_id}')">Setujui</button>
+                  <button class="danger" onclick="no('${r.leave_id}')">Tolak</button>
+                </div>
+              </article>
+            `
+            )
+            .join('') || '<p>Tidak ada.</p>'
+        }
+      </div>
+    `;
+  } catch (e) {
+    c.innerHTML = `<div class="card err">${esc(e.message)}</div>`;
+  }
+}
+
+window.ok = async (id) => {
+  try {
+    const d = await API.call('approveLeave', { leave_id: id });
+    alert('Berhasil ' + (d.document?.document_number || ''));
+    approval();
+  } catch (e) {
+    alert(e.message);
+  }
+};
+
+window.no = async (id) => {
+  const reason = prompt('Alasan penolakan');
+  if (!reason) return;
+  try {
+    await API.call('rejectLeave', { leave_id: id, reason });
+    approval();
+  } catch (e) {
+    alert(e.message);
+  }
+};
+
+async function employees() {
+  const rows = await API.call('listEmployees');
+  c.innerHTML = `
+    <div class="card">
+      <h3>Karyawan</h3>
+      <table>
+        <tr><th>NIK</th><th>Nama</th><th>Jabatan</th><th>Departemen</th></tr>
+        ${rows
+          .map(
+            (r) =>
+              `<tr><td>${esc(r.nik)}</td><td>${esc(r.name)}</td><td>${esc(r.position_id)}</td><td>${esc(r.department_id)}</td></tr>`
+          )
+          .join('')}
+      </table>
+    </div>
+  `;
+}
+
+async function holidays() {
+  const rows = await API.call('listHolidays', { year: new Date().getFullYear() });
+  c.innerHTML = `
+    <div class="card">
+      <h3>Hari Libur</h3>
+      <table>
+        <tr><th>Tanggal</th><th>Nama</th><th>Jenis</th></tr>
+        ${rows
+          .map(
+            (r) =>
+              `<tr><td>${r.holiday_date}</td><td>${esc(r.holiday_name)}</td><td>${esc(r.holiday_type)}</td></tr>`
+          )
+          .join('')}
+      </table>
+    </div>
+  `;
+}
+
+async function calendar() {
+  const rows = await API.call('listLeaves', { status: 'LETTER_ISSUED' });
+  c.innerHTML = `
+    <div class="card">
+      <h3>Kalender Cuti</h3>
+      ${
+        rows
+          .map(
+            (r) =>
+              `<div class="row"><div>${esc(r.employee_id)}<small>${r.start_date} → ${r.end_date}</small></div><span>${r.total_days} hari</span></div>`
+          )
+          .join('') || 'Belum ada data.'
+      }
+    </div>
+  `;
+}
+
+async function audit() {
+  const rows = await API.call('getAudit', {});
+  c.innerHTML = `
+    <div class="card">
+      <h3>Audit Log</h3>
+      <table>
+        <tr><th>Waktu</th><th>User</th><th>Action</th><th>Deskripsi</th></tr>
+        ${rows
+          .map(
+            (r) =>
+              `<tr><td>${r.timestamp}</td><td>${esc(r.user_name)}</td><td>${esc(r.action)}</td><td>${esc(r.description)}</td></tr>`
+          )
+          .join('')}
+      </table>
+    </div>
+  `;
+}
+
+function reports() {
+  c.innerHTML =
+    '<div class="card"><h3>Laporan</h3><p>Endpoint laporan sudah tersedia. UI filter dapat diperluas tanpa mengubah API inti.</p></div>';
+}
+
+function backup() {
+  c.innerHTML =
+    '<div class="card"><h3>Backup Database</h3><button onclick="doBackup()">Backup Sekarang</button></div>';
+}
+
+window.doBackup = async () => {
+  try {
+    const d = await API.call('backupDatabase');
+    alert('Backup selesai: ' + d.name);
+  } catch (e) {
+    alert(e.message);
+  }
+};
+
+boot();
